@@ -1,0 +1,60 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@2.7.2
+  node: circleci/node@5.1.0
+
+jobs:
+  build:
+    docker:
+      - image: cimg/python:3.9
+    working_directory: ~/project
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+      - run:
+          command: pip install -r requirements.txt
+          name: Install dependencies
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+  deploy:
+    docker:
+      - image: cimg/base:2022.06
+    working_directory: ~/project
+
+    steps:
+      - attach_workspace:
+          at: .
+
+      - setup_remote_docker:
+          version: default
+          docker_layer_caching: true
+
+      - run:
+          name: Authenticate with DigitalOcean Container Registry
+          command: docker login -u "$DIGITALOCEAN_REGISTRY_TOKEN" -p $DIGITALOCEAN_REGISTRY_TOKEN $DIGITALOCEAN_REGISTRY
+
+      - run:
+          name: Build Docker image
+          command: docker build -t $DIGITALOCEAN_REGISTRY/$CIRCLE_PROJECT_REPONAME:$CIRCLE_PROJECT_REPONAME .
+
+      - run:
+          name: Push image to registry
+          command: docker push $DIGITALOCEAN_REGISTRY/$CIRCLE_PROJECT_REPONAME:$CIRCLE_PROJECT_REPONAME
+
+workflows:
+  build-and-deploy:
+    jobs:
+      - build
+      - deploy:
+          context:
+            - swimhistory
+          requires:
+            - build
+          filters:
+            branches:
+              only: master
+
